@@ -1,44 +1,140 @@
 console.clear();
 
+// Mobile device detection and optimization
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+const isLowEnd = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4;
+const isRedmiA2 = /Redmi A2|M2101K9G/i.test(navigator.userAgent);
+
+// Performance settings based on device
+const PERFORMANCE_SETTINGS = {
+  particleCount: isMobile ? (isLowEnd || isRedmiA2 ? 800 : 1000) : 1400,
+  pixelRatio: isMobile ? (window.devicePixelRatio > 1 ? 1.5 : 1) : (window.devicePixelRatio > 1 ? 2 : 1),
+  antialias: !isMobile || !isLowEnd,
+  powerPreference: isMobile ? 'low-power' : 'high-performance'
+};
+
+// Loading screen management
+const loadingEl = document.getElementById('loading');
+const touchHintEl = document.getElementById('touchHint');
+
+function hideLoading() {
+  if (loadingEl) {
+    loadingEl.classList.add('hidden');
+    setTimeout(() => {
+      if (loadingEl.parentNode) {
+        loadingEl.parentNode.removeChild(loadingEl);
+      }
+    }, 500);
+  }
+}
+
+// Scene setup with mobile optimizations
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 5000);
 camera.position.z = 700;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(window.devicePixelRatio > 1 ? 2 : 1);
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x000000, 1);
-document.body.appendChild(renderer.domElement);
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+const renderer = new THREE.WebGLRenderer({ 
+  antialias: PERFORMANCE_SETTINGS.antialias, 
+  alpha: true,
+  powerPreference: PERFORMANCE_SETTINGS.powerPreference,
+  preserveDrawingBuffer: false,
+  failIfMajorPerformanceCaveat: false
 });
 
-const PARTICLE_COUNT = 1400;
+renderer.setPixelRatio(PERFORMANCE_SETTINGS.pixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 1);
+
+// Mobile-specific renderer settings
+if (isMobile) {
+  renderer.shadowMap.enabled = false;
+  renderer.autoClear = true;
+  renderer.sortObjects = false;
+}
+
+document.body.appendChild(renderer.domElement);
+
+// Optimized resize handler with debouncing
+let resizeTimeout;
+function handleResize() {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(() => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+    
+    // Recompute targets for new screen size
+    targets = computeTargets();
+  }, 100);
+}
+
+window.addEventListener('resize', handleResize, { passive: true });
+
+// Handle orientation change
+window.addEventListener('orientationchange', () => {
+  setTimeout(handleResize, 500);
+}, { passive: true });
+
+const PARTICLE_COUNT = PERFORMANCE_SETTINGS.particleCount;
 const COLOR = 0xee5282;
 const particlesVerts = [];
 let pointsMesh, positions;
+
+// Performance monitoring
+let frameCount = 0;
+let lastTime = performance.now();
+let fps = 60;
+
+function updateFPS() {
+  frameCount++;
+  const currentTime = performance.now();
+  if (currentTime - lastTime >= 1000) {
+    fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+    frameCount = 0;
+    lastTime = currentTime;
+    
+    // Adjust quality based on FPS
+    if (fps < 30 && PARTICLE_COUNT > 600) {
+      console.log('Reducing particles for better performance');
+    }
+  }
+}
 
 function sampleTextPoints(text, w, h, step = 4, fontScale = 0.6) {
   const off = document.createElement('canvas');
   off.width = w;
   off.height = h;
   const octx = off.getContext('2d');
-  octx.clearRect(0,0,w,h);
+  
+  // Mobile optimization: reduce canvas size for better performance
+  const scaleFactor = isMobile ? 0.8 : 1;
+  const scaledW = Math.floor(w * scaleFactor);
+  const scaledH = Math.floor(h * scaleFactor);
+  
+  octx.clearRect(0, 0, scaledW, scaledH);
   octx.fillStyle = '#fff';
-  const fontSize = Math.floor(h * fontScale);
+  const fontSize = Math.floor(scaledH * fontScale);
   octx.font = `bold ${fontSize}px Arial`;
   octx.textAlign = 'center';
   octx.textBaseline = 'middle';
-  octx.fillText(text, w/2, h/2);
-  const img = octx.getImageData(0,0,w,h).data;
+  octx.fillText(text, scaledW/2, scaledH/2);
+  
+  const img = octx.getImageData(0, 0, scaledW, scaledH).data;
   const pts = [];
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      const idx = (y * w + x) * 4;
-      if (img[idx+3] > 150) pts.push({ x: x - w/2, y: h/2 - y });
+  const adjustedStep = isMobile ? Math.max(step, 6) : step;
+  
+  for (let y = 0; y < scaledH; y += adjustedStep) {
+    for (let x = 0; x < scaledW; x += adjustedStep) {
+      const idx = (y * scaledW + x) * 4;
+      if (img[idx+3] > 150) {
+        pts.push({ 
+          x: (x - scaledW/2) / scaleFactor, 
+          y: (scaledH/2 - y) / scaleFactor 
+        });
+      }
     }
   }
   return pts;
@@ -75,12 +171,19 @@ function buildParticles() {
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  
+  // Dynamic particle size based on device performance
+  const baseSize = isMobile ? 
+    (isRedmiA2 ? 1.8 : 2.0) : 
+    Math.max(2.2, (window.innerWidth / 900));
+
   const material = new THREE.PointsMaterial({
-    size: Math.max(2.2, (window.innerWidth / 900)),
+    size: baseSize,
     color: COLOR,
     transparent: true,
     depthTest: false,
-    blending: THREE.AdditiveBlending
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: !isMobile // Disable size attenuation on mobile for better performance
   });
 
   pointsMesh = new THREE.Points(geometry, material);
@@ -90,35 +193,68 @@ function buildParticles() {
 function computeTargets() {
   const heartRaw = sampleHeartPoints(PARTICLE_COUNT);
 
-  // ✅ التعديل الجديد لضبط الحجم والموقع على جميع الأجهزة
-  let scaleBase = Math.min(window.innerWidth, window.innerHeight);
+  // Enhanced mobile-responsive scaling
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const isLandscape = width > height;
+  
+  let scaleBase = Math.min(width, height);
   let scaleFactor = 1.3;
 
-  if (window.innerWidth < 600) scaleFactor = 0.6;
-  else if (window.innerWidth < 1000) scaleFactor = 0.9;
-  else scaleFactor = 1.2;
+  // Redmi A2 specific optimizations (360x640)
+  if (width <= 360 && height <= 640) {
+    scaleFactor = 0.5;
+  } else if (width < 480) {
+    scaleFactor = 0.6;
+  } else if (width < 768) {
+    scaleFactor = 0.8;
+  } else if (width < 1024) {
+    scaleFactor = 1.0;
+  } else {
+    scaleFactor = 1.2;
+  }
+
+  // Adjust for landscape mode
+  if (isLandscape && height < 500) {
+    scaleFactor *= 0.8;
+  }
 
   const scale = scaleBase / 36 * scaleFactor * 0.8;
 
   const heartTargets = heartRaw.map(p => {
-    return new THREE.Vector3(p.x * scale, p.y * scale - 100, (Math.random()-0.5)*80);
+    const zOffset = isMobile ? (Math.random()-0.5)*40 : (Math.random()-0.5)*80;
+    return new THREE.Vector3(p.x * scale, p.y * scale - 100, zOffset);
   });
 
-  const nameW = Math.max(380, Math.floor(window.innerWidth * 0.7));
-  let nameH = Math.max(120, Math.floor(window.innerHeight * 0.18));
-  const phraseW = Math.max(500, Math.floor(window.innerWidth * 0.9));
-  let phraseH = Math.max(120, Math.floor(window.innerHeight * 0.18));
+  // Dynamic text sizing based on device
+  const nameW = Math.max(280, Math.floor(width * (isMobile ? 0.8 : 0.7)));
+  let nameH = Math.max(80, Math.floor(height * (isMobile ? 0.15 : 0.18)));
+  const phraseW = Math.max(400, Math.floor(width * (isMobile ? 0.9 : 0.9)));
+  let phraseH = Math.max(80, Math.floor(height * (isMobile ? 0.15 : 0.18)));
 
-  if (window.innerWidth < 800) {
+  // Redmi A2 specific text sizing
+  if (width <= 360) {
+    nameH *= 0.5;
+    phraseH *= 0.5;
+  } else if (width < 480) {
     nameH *= 0.6;
     phraseH *= 0.6;
+  } else if (width < 768) {
+    nameH *= 0.7;
+    phraseH *= 0.7;
   }
 
-  const nameRaw = sampleTextPoints('Laura', nameW, nameH, 4, 0.72);
-  const nameTargets = nameRaw.map(r => new THREE.Vector3(r.x, r.y - 20, (Math.random()-0.5)*40));
+  const nameRaw = sampleTextPoints('Laura', nameW, nameH, isMobile ? 6 : 4, isMobile ? 0.8 : 0.72);
+  const nameTargets = nameRaw.map(r => {
+    const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
+    return new THREE.Vector3(r.x, r.y - 20, zOffset);
+  });
 
-  const phraseRaw = sampleTextPoints('I MISS YOU LAURA', phraseW, phraseH, 4, 0.5);
-  const phraseTargets = phraseRaw.map(r => new THREE.Vector3(r.x, r.y - 40, (Math.random()-0.5)*40));
+  const phraseRaw = sampleTextPoints('I MISS YOU LAURA', phraseW, phraseH, isMobile ? 6 : 4, isMobile ? 0.6 : 0.5);
+  const phraseTargets = phraseRaw.map(r => {
+    const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
+    return new THREE.Vector3(r.x, r.y - 40, zOffset);
+  });
 
   return { heartTargets, nameTargets, phraseTargets };
 }
@@ -203,17 +339,24 @@ function startSequence() {
 }
 
 function moveToTargets() {
-  for (let i=0;i<PARTICLE_COUNT;i++) {
+  // Optimized movement with performance monitoring
+  const lerpSpeed = isMobile ? 0.06 : 0.08; // Slower on mobile for better performance
+  
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
     const v = particlesVerts[i];
     if (!v.target) continue;
-    v.x += (v.target.x - v.x) * 0.08;
-    v.y += (v.target.y - v.y) * 0.08;
-    v.z += (v.target.z - v.z) * 0.08;
+    
+    v.x += (v.target.x - v.x) * lerpSpeed;
+    v.y += (v.target.y - v.y) * lerpSpeed;
+    v.z += (v.target.z - v.z) * lerpSpeed;
+    
     positions[i*3] = v.x;
     positions[i*3+1] = v.y;
     positions[i*3+2] = v.z;
   }
+  
   pointsMesh.geometry.attributes.position.needsUpdate = true;
+  updateFPS(); // Monitor performance
 }
 
 function updatePositions() {
@@ -225,21 +368,77 @@ function updatePositions() {
   pointsMesh.geometry.attributes.position.needsUpdate = true;
 }
 
-buildParticles();
-targets = computeTargets();
-startSequence();
+// Enhanced audio handling for mobile devices
+const audio = document.getElementById('bgMusic');
+audio.volume = 0.4;
 
-gsap.to(scene.rotation, { y: 0.35, duration: 6, repeat: -1, yoyo: true, ease: "sine.inOut" });
+// Mobile-specific audio initialization
+function initAudio() {
+  // Preload audio for better mobile experience
+  audio.load();
+  
+  // Handle audio context for mobile browsers
+  const playAudio = () => {
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(error => {
+        console.log('Audio play failed:', error);
+        // Show touch hint if audio fails
+        if (touchHintEl) {
+          touchHintEl.style.display = 'block';
+        }
+      });
+    }
+  };
+  
+  // Multiple event listeners for better mobile compatibility
+  const events = ['click', 'touchstart', 'touchend'];
+  events.forEach(event => {
+    document.addEventListener(event, playAudio, { once: true, passive: true });
+  });
+  
+  // Hide touch hint after successful play
+  audio.addEventListener('play', () => {
+    if (touchHintEl) {
+      touchHintEl.classList.add('hidden');
+    }
+  });
+}
 
 function animate() {
   requestAnimationFrame(animate);
   renderer.render(scene, camera);
 }
-animate();
 
-// ✅ تشغيل الموسيقى بعد أول لمسة
-const audio = document.getElementById('bgMusic');
-audio.volume = 0.4;
-document.addEventListener("click", () => {
-  audio.play().catch(() => {});
-}, { once: true });
+// Initialize everything
+function init() {
+  // Hide loading screen after a short delay
+  setTimeout(hideLoading, 1000);
+  
+  // Initialize audio
+  initAudio();
+  
+  // Start the animation sequence
+  buildParticles();
+  targets = computeTargets();
+  startSequence();
+  
+  // Start scene rotation
+  gsap.to(scene.rotation, { 
+    y: 0.35, 
+    duration: 6, 
+    repeat: -1, 
+    yoyo: true, 
+    ease: "sine.inOut" 
+  });
+  
+  // Start animation loop
+  animate();
+}
+
+// Wait for everything to load before initializing
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
