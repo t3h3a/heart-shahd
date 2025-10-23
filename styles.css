@@ -1,0 +1,15 @@
+html,body {
+  height:100%;
+  margin:0;
+  background:#000; /* خلفية سوداء */
+  overflow:hidden;
+}
+canvas {
+  display:block;
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100%;
+  touch-action:none;
+  -webkit-tap-highlight-color: transparent;
+}
