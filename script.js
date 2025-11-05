@@ -244,13 +244,13 @@ function computeTargets() {
     phraseH *= 0.7;
   }
 
-  const nameRaw = sampleTextPoints('Laura', nameW, nameH, isMobile ? 6 : 4, isMobile ? 0.8 : 0.72);
+  const nameRaw = sampleTextPoints('Shahd', nameW, nameH, isMobile ? 6 : 4, isMobile ? 0.8 : 0.72);
   const nameTargets = nameRaw.map(r => {
     const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
     return new THREE.Vector3(r.x, r.y - 20, zOffset);
   });
 
-  const phraseRaw = sampleTextPoints('I MISS YOU LAURA', phraseW, phraseH, isMobile ? 6 : 4, isMobile ? 0.6 : 0.5);
+  const phraseRaw = sampleTextPoints('I LOVE YOU SHAHD', phraseW, phraseH, isMobile ? 6 : 4, isMobile ? 0.6 : 0.5);
   const phraseTargets = phraseRaw.map(r => {
     const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
     return new THREE.Vector3(r.x, r.y - 40, zOffset);
