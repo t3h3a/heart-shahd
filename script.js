@@ -108,11 +108,14 @@ function updateFPS() {
 
 function sampleTextPoints(text, w, h, step = 4, fontScale = 0.6) {
   const off = document.createElement('canvas');
-  // Increase canvas resolution for better text quality
-  const scaleFactor = isMobile ? 1.2 : 1.5;
-  // Ensure canvas is wide enough for long text like "I LOVE YOU SHAHD"
-  const canvasWidth = Math.max(Math.floor(w * scaleFactor), text.length * 20 * scaleFactor);
+  // Much higher resolution for better text quality
+  const scaleFactor = isMobile ? 2.0 : 2.5;
+  
+  // Calculate required width based on text length to prevent cutoff
+  const minTextWidth = text.length * 25; // Ensure enough space per character
+  const canvasWidth = Math.max(Math.floor(w * scaleFactor), Math.floor(minTextWidth * scaleFactor));
   const canvasHeight = Math.floor(h * scaleFactor);
+  
   off.width = canvasWidth;
   off.height = canvasHeight;
   const octx = off.getContext('2d');
@@ -120,42 +123,50 @@ function sampleTextPoints(text, w, h, step = 4, fontScale = 0.6) {
   const scaledW = off.width;
   const scaledH = off.height;
   
-  // Enable better text rendering
+  // Enable high-quality text rendering
   octx.textBaseline = 'middle';
   octx.textAlign = 'center';
+  octx.imageSmoothingEnabled = true;
+  octx.imageSmoothingQuality = 'high';
   
   // Clear and draw text
   octx.clearRect(0, 0, scaledW, scaledH);
   octx.fillStyle = '#fff';
   
-  // Calculate font size to fit text width
+  // Start with calculated font size
   let fontSize = Math.floor(scaledH * fontScale);
-  octx.font = `900 ${fontSize}px Arial, sans-serif`;
+  let fontFamily = 'Arial, sans-serif';
+  octx.font = `900 ${fontSize}px ${fontFamily}`;
   
-  // Measure text width and adjust if needed
-  const textMetrics = octx.measureText(text);
-  const textWidth = textMetrics.width;
+  // Measure text and adjust to fit perfectly
+  let textMetrics = octx.measureText(text);
+  let textWidth = textMetrics.width;
+  let maxWidth = scaledW * 0.95; // Leave 5% margin
   
-  // If text is too wide, reduce font size to fit
-  if (textWidth > scaledW * 0.9) {
-    fontSize = Math.floor((fontSize * scaledW * 0.9) / textWidth);
-    octx.font = `900 ${fontSize}px Arial, sans-serif`;
+  // Adjust font size to fit perfectly without cutoff
+  if (textWidth > maxWidth) {
+    fontSize = Math.floor((fontSize * maxWidth) / textWidth);
+    octx.font = `900 ${fontSize}px ${fontFamily}`;
+    textMetrics = octx.measureText(text);
+    textWidth = textMetrics.width;
   }
   
+  // Draw text with high quality
   octx.fillText(text, scaledW/2, scaledH/2);
   
   // Get image data for point sampling
   const img = octx.getImageData(0, 0, scaledW, scaledH).data;
   const pts = [];
-  // Use smaller step for denser particles (more visible text)
-  const adjustedStep = isMobile ? Math.max(step, 3) : Math.max(step, 2);
   
-  // Sample points more densely
+  // Much smaller step for very dense, high-quality text rendering
+  const adjustedStep = isMobile ? Math.max(step, 1.5) : Math.max(step, 1);
+  
+  // Sample points very densely for better quality
   for (let y = 0; y < scaledH; y += adjustedStep) {
     for (let x = 0; x < scaledW; x += adjustedStep) {
       const idx = (y * scaledW + x) * 4;
-      // Lower threshold for better text coverage
-      if (img[idx+3] > 120) {
+      // Lower threshold for complete text coverage
+      if (img[idx+3] > 100) {
         pts.push({ 
           x: (x - scaledW/2) / scaleFactor, 
           y: (scaledH/2 - y) / scaleFactor 
@@ -163,6 +174,7 @@ function sampleTextPoints(text, w, h, step = 4, fontScale = 0.6) {
       }
     }
   }
+  
   return pts;
 }
 
@@ -282,53 +294,53 @@ function computeTargets() {
   let nameFontScale, phraseFontScale;
   
   if (isLandscape) {
-    // Landscape mode - larger text areas, ensure full text visibility
-    nameW = Math.max(250, Math.floor(width * 0.35));
-    nameH = Math.max(100, Math.floor(height * 0.35));
-    // Make phrase wider to fit "I LOVE YOU SHAHD" completely
-    phraseW = Math.max(500, Math.floor(width * 0.65));
-    phraseH = Math.max(80, Math.floor(height * 0.3));
+    // Landscape mode - ensure full text visibility, no cutoff
+    nameW = Math.max(300, Math.floor(width * 0.4));
+    nameH = Math.max(120, Math.floor(height * 0.4));
+    // Make phrase MUCH wider to guarantee "I LOVE YOU SHAHD" fits completely
+    phraseW = Math.max(600, Math.floor(width * 0.75));
+    phraseH = Math.max(100, Math.floor(height * 0.35));
     
     if (height <= 400) {
-      nameFontScale = 0.85;
-      phraseFontScale = 0.65;
+      nameFontScale = 0.9;
+      phraseFontScale = 0.7;
     } else if (height <= 600) {
-      nameFontScale = 0.95;
-      phraseFontScale = 0.7;
-    } else {
-      nameFontScale = 1.05;
-      phraseFontScale = 0.75;
-    }
-  } else {
-    // Portrait mode - ensure text fits on screen
-    nameW = Math.max(300, Math.floor(width * 0.9));
-    nameH = Math.max(120, Math.floor(height * 0.18));
-    // Make phrase wider to prevent text cutoff - use full width minus margins
-    phraseW = Math.max(450, Math.floor(width * 0.95));
-    phraseH = Math.max(100, Math.floor(height * 0.15));
-    
-    if (width <= 320) {
-      nameFontScale = 0.85;
-      phraseFontScale = 0.6;
-    } else if (width <= 375) {
-      nameFontScale = 0.95;
-      phraseFontScale = 0.65;
-    } else if (width <= 414) {
       nameFontScale = 1.0;
-      phraseFontScale = 0.7;
-    } else if (width <= 768) {
-      nameFontScale = 1.05;
       phraseFontScale = 0.75;
     } else {
       nameFontScale = 1.1;
       phraseFontScale = 0.8;
     }
+  } else {
+    // Portrait mode - use almost full width to ensure no cutoff
+    nameW = Math.max(350, Math.floor(width * 0.95));
+    nameH = Math.max(140, Math.floor(height * 0.2));
+    // Use full width for phrase to prevent any cutoff
+    phraseW = Math.max(500, Math.floor(width * 0.98));
+    phraseH = Math.max(120, Math.floor(height * 0.18));
+    
+    if (width <= 320) {
+      nameFontScale = 0.9;
+      phraseFontScale = 0.65;
+    } else if (width <= 375) {
+      nameFontScale = 1.0;
+      phraseFontScale = 0.7;
+    } else if (width <= 414) {
+      nameFontScale = 1.05;
+      phraseFontScale = 0.75;
+    } else if (width <= 768) {
+      nameFontScale = 1.1;
+      phraseFontScale = 0.8;
+    } else {
+      nameFontScale = 1.15;
+      phraseFontScale = 0.85;
+    }
   }
 
-  // Text sampling step - smaller step for denser, clearer text
+  // Text sampling step - very small for maximum quality and density
   const textStep = isMobile ? 
-    (minDimension <= 360 ? 3 : minDimension <= 480 ? 2.5 : 2) : 
-    2;
+    (minDimension <= 360 ? 1.5 : minDimension <= 480 ? 1.2 : 1) : 
+    1;
 
   const nameRaw = sampleTextPoints('Shahd', nameW, nameH, textStep, nameFontScale);
   const nameTargets = nameRaw.map(r => {
@@ -340,8 +352,9 @@ function computeTargets() {
     } else {
       nameYPos = heartYOffset + heartScale * 0.4;
     }
-    // Ensure text doesn't go off screen horizontally
-    const xPos = Math.max(-width/2 + 20, Math.min(width/2 - 20, r.x));
+    // Ensure text stays within screen bounds with proper margin
+    const margin = 40;
+    const xPos = Math.max(-width/2 + margin, Math.min(width/2 - margin, r.x));
     return new THREE.Vector3(xPos, r.y + nameYPos, zOffset);
   });
 
@@ -355,8 +368,10 @@ function computeTargets() {
     } else {
       phraseYPos = heartYOffset + heartScale * 0.4 + nameH * 0.4;
     }
-    // Ensure text doesn't go off screen horizontally - important for long text
-    const xPos = Math.max(-width/2 + 30, Math.min(width/2 - 30, r.x));
+    // Critical: Ensure long text "I LOVE YOU SHAHD" stays fully within screen
+    // Use larger margin to prevent any cutoff
+    const margin = 50;
+    const xPos = Math.max(-width/2 + margin, Math.min(width/2 - margin, r.x));
     return new THREE.Vector3(xPos, r.y + phraseYPos, zOffset);
   });
 
