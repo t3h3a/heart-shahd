@@ -68,6 +68,9 @@ function handleResize() {
     
     // Recompute targets for new screen size
     targets = computeTargets();
+    
+    // Restart animation sequence with new targets
+    startSequence();
   }, 100);
 }
 
@@ -193,67 +196,139 @@ function buildParticles() {
 function computeTargets() {
   const heartRaw = sampleHeartPoints(PARTICLE_COUNT);
 
-  // Enhanced mobile-responsive scaling
+  // Enhanced responsive scaling for all screen sizes
   const width = window.innerWidth;
   const height = window.innerHeight;
   const isLandscape = width > height;
+  const aspectRatio = width / height;
+  const minDimension = Math.min(width, height);
+  const maxDimension = Math.max(width, height);
   
-  let scaleBase = Math.min(width, height);
-  let scaleFactor = 1.3;
-
-  // Redmi A2 specific optimizations (360x640)
-  if (width <= 360 && height <= 640) {
-    scaleFactor = 0.5;
-  } else if (width < 480) {
-    scaleFactor = 0.6;
-  } else if (width < 768) {
-    scaleFactor = 0.8;
-  } else if (width < 1024) {
-    scaleFactor = 1.0;
+  // Smart heart scaling based on screen size and orientation
+  let heartScale;
+  if (isLandscape) {
+    // Landscape mode: use height as base
+    if (height <= 400) {
+      heartScale = height * 0.35;
+    } else if (height <= 600) {
+      heartScale = height * 0.4;
+    } else if (height <= 800) {
+      heartScale = height * 0.45;
+    } else {
+      heartScale = height * 0.5;
+    }
   } else {
-    scaleFactor = 1.2;
+    // Portrait mode: use width as base
+    if (width <= 320) {
+      heartScale = width * 0.5;
+    } else if (width <= 375) {
+      heartScale = width * 0.55;
+    } else if (width <= 414) {
+      heartScale = width * 0.6;
+    } else if (width <= 768) {
+      heartScale = width * 0.65;
+    } else {
+      heartScale = width * 0.7;
+    }
   }
-
-  // Adjust for landscape mode
-  if (isLandscape && height < 500) {
-    scaleFactor *= 0.8;
+  
+  // Apply base scale factor (heart formula scale)
+  const scale = heartScale / 36;
+  
+  // Heart vertical position - centered with smart offset
+  let heartYOffset = 0;
+  if (isLandscape) {
+    heartYOffset = height * 0.1;
+  } else {
+    if (height <= 600) {
+      heartYOffset = -height * 0.05;
+    } else if (height <= 800) {
+      heartYOffset = height * 0.05;
+    } else {
+      heartYOffset = height * 0.1;
+    }
   }
-
-  const scale = scaleBase / 36 * scaleFactor * 0.8;
 
   const heartTargets = heartRaw.map(p => {
     const zOffset = isMobile ? (Math.random()-0.5)*40 : (Math.random()-0.5)*80;
-    return new THREE.Vector3(p.x * scale, p.y * scale - 100, zOffset);
+    return new THREE.Vector3(p.x * scale, p.y * scale + heartYOffset, zOffset);
   });
 
-  // Dynamic text sizing based on device
-  const nameW = Math.max(280, Math.floor(width * (isMobile ? 0.8 : 0.7)));
-  let nameH = Math.max(80, Math.floor(height * (isMobile ? 0.15 : 0.18)));
-  const phraseW = Math.max(400, Math.floor(width * (isMobile ? 0.9 : 0.9)));
-  let phraseH = Math.max(80, Math.floor(height * (isMobile ? 0.15 : 0.18)));
-
-  // Redmi A2 specific text sizing
-  if (width <= 360) {
-    nameH *= 0.5;
-    phraseH *= 0.5;
-  } else if (width < 480) {
-    nameH *= 0.6;
-    phraseH *= 0.6;
-  } else if (width < 768) {
-    nameH *= 0.7;
-    phraseH *= 0.7;
+  // Smart text sizing - adaptive to screen size
+  let nameW, nameH, phraseW, phraseH;
+  let nameFontScale, phraseFontScale;
+  
+  if (isLandscape) {
+    // Landscape mode
+    nameW = Math.max(200, Math.floor(width * 0.25));
+    nameH = Math.max(60, Math.floor(height * 0.25));
+    phraseW = Math.max(300, Math.floor(width * 0.35));
+    phraseH = Math.max(50, Math.floor(height * 0.2));
+    
+    if (height <= 400) {
+      nameFontScale = 0.75;
+      phraseFontScale = 0.55;
+    } else if (height <= 600) {
+      nameFontScale = 0.85;
+      phraseFontScale = 0.6;
+    } else {
+      nameFontScale = 0.9;
+      phraseFontScale = 0.65;
+    }
+  } else {
+    // Portrait mode
+    nameW = Math.max(250, Math.floor(width * 0.75));
+    nameH = Math.max(70, Math.floor(height * 0.12));
+    phraseW = Math.max(350, Math.floor(width * 0.85));
+    phraseH = Math.max(60, Math.floor(height * 0.1));
+    
+    if (width <= 320) {
+      nameFontScale = 0.75;
+      phraseFontScale = 0.5;
+    } else if (width <= 375) {
+      nameFontScale = 0.8;
+      phraseFontScale = 0.55;
+    } else if (width <= 414) {
+      nameFontScale = 0.85;
+      phraseFontScale = 0.6;
+    } else if (width <= 768) {
+      nameFontScale = 0.9;
+      phraseFontScale = 0.65;
+    } else {
+      nameFontScale = 0.95;
+      phraseFontScale = 0.7;
+    }
   }
 
-  const nameRaw = sampleTextPoints('Shahd', nameW, nameH, isMobile ? 6 : 4, isMobile ? 0.8 : 0.72);
+  // Text sampling step - adaptive based on screen size
+  const textStep = isMobile ? 
+    (minDimension <= 360 ? 7 : minDimension <= 480 ? 6 : 5) : 
+    4;
+
+  const nameRaw = sampleTextPoints('Shahd', nameW, nameH, textStep, nameFontScale);
   const nameTargets = nameRaw.map(r => {
     const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
-    return new THREE.Vector3(r.x, r.y - 20, zOffset);
+    // Position name above heart
+    let nameYPos;
+    if (isLandscape) {
+      nameYPos = heartYOffset + heartScale * 0.6;
+    } else {
+      nameYPos = heartYOffset + heartScale * 0.5;
+    }
+    return new THREE.Vector3(r.x, r.y + nameYPos, zOffset);
   });
 
-  const phraseRaw = sampleTextPoints('I LOVE YOU SHAHD', phraseW, phraseH, isMobile ? 6 : 4, isMobile ? 0.6 : 0.5);
+  const phraseRaw = sampleTextPoints('I LOVE YOU SHAHD', phraseW, phraseH, textStep, phraseFontScale);
   const phraseTargets = phraseRaw.map(r => {
     const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
-    return new THREE.Vector3(r.x, r.y - 40, zOffset);
+    // Position phrase below name
+    let phraseYPos;
+    if (isLandscape) {
+      phraseYPos = heartYOffset + heartScale * 0.6 + nameH * 0.6;
+    } else {
+      phraseYPos = heartYOffset + heartScale * 0.5 + nameH * 0.5;
+    }
+    return new THREE.Vector3(r.x, r.y + phraseYPos, zOffset);
   });
 
   return { heartTargets, nameTargets, phraseTargets };
@@ -315,7 +390,7 @@ function startSequence() {
     onStart: () => {
       for (let i=0;i<PARTICLE_COUNT;i++) {
         const t = targets.nameTargets[i % targets.nameTargets.length];
-        particlesVerts[i].target = new THREE.Vector3(t.x, t.y - 50, t.z);
+        particlesVerts[i].target = new THREE.Vector3(t.x, t.y, t.z);
       }
     },
     onUpdate: moveToTargets
@@ -329,7 +404,7 @@ function startSequence() {
     onStart: () => {
       for (let i=0;i<PARTICLE_COUNT;i++) {
         const pt = targets.phraseTargets[i % targets.phraseTargets.length];
-        particlesVerts[i].target = new THREE.Vector3(pt.x + 120, pt.y - 50, pt.z);
+        particlesVerts[i].target = new THREE.Vector3(pt.x, pt.y, pt.z);
       }
     },
     onUpdate: moveToTargets
