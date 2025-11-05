@@ -108,31 +108,54 @@ function updateFPS() {
 
 function sampleTextPoints(text, w, h, step = 4, fontScale = 0.6) {
   const off = document.createElement('canvas');
-  off.width = w;
-  off.height = h;
+  // Increase canvas resolution for better text quality
+  const scaleFactor = isMobile ? 1.2 : 1.5;
+  // Ensure canvas is wide enough for long text like "I LOVE YOU SHAHD"
+  const canvasWidth = Math.max(Math.floor(w * scaleFactor), text.length * 20 * scaleFactor);
+  const canvasHeight = Math.floor(h * scaleFactor);
+  off.width = canvasWidth;
+  off.height = canvasHeight;
   const octx = off.getContext('2d');
   
-  // Mobile optimization: reduce canvas size for better performance
-  const scaleFactor = isMobile ? 0.8 : 1;
-  const scaledW = Math.floor(w * scaleFactor);
-  const scaledH = Math.floor(h * scaleFactor);
+  const scaledW = off.width;
+  const scaledH = off.height;
   
+  // Enable better text rendering
+  octx.textBaseline = 'middle';
+  octx.textAlign = 'center';
+  
+  // Clear and draw text
   octx.clearRect(0, 0, scaledW, scaledH);
   octx.fillStyle = '#fff';
-  const fontSize = Math.floor(scaledH * fontScale);
-  octx.font = `bold ${fontSize}px Arial`;
-  octx.textAlign = 'center';
-  octx.textBaseline = 'middle';
+  
+  // Calculate font size to fit text width
+  let fontSize = Math.floor(scaledH * fontScale);
+  octx.font = `900 ${fontSize}px Arial, sans-serif`;
+  
+  // Measure text width and adjust if needed
+  const textMetrics = octx.measureText(text);
+  const textWidth = textMetrics.width;
+  
+  // If text is too wide, reduce font size to fit
+  if (textWidth > scaledW * 0.9) {
+    fontSize = Math.floor((fontSize * scaledW * 0.9) / textWidth);
+    octx.font = `900 ${fontSize}px Arial, sans-serif`;
+  }
+  
   octx.fillText(text, scaledW/2, scaledH/2);
   
+  // Get image data for point sampling
   const img = octx.getImageData(0, 0, scaledW, scaledH).data;
   const pts = [];
-  const adjustedStep = isMobile ? Math.max(step, 6) : step;
+  // Use smaller step for denser particles (more visible text)
+  const adjustedStep = isMobile ? Math.max(step, 3) : Math.max(step, 2);
   
+  // Sample points more densely
   for (let y = 0; y < scaledH; y += adjustedStep) {
     for (let x = 0; x < scaledW; x += adjustedStep) {
       const idx = (y * scaledW + x) * 4;
-      if (img[idx+3] > 150) {
+      // Lower threshold for better text coverage
+      if (img[idx+3] > 120) {
         pts.push({ 
           x: (x - scaledW/2) / scaleFactor, 
           y: (scaledH/2 - y) / scaleFactor 
@@ -175,10 +198,10 @@ function buildParticles() {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   
-  // Dynamic particle size based on device performance
+  // Dynamic particle size based on device performance - larger for better visibility
   const baseSize = isMobile ? 
-    (isRedmiA2 ? 1.8 : 2.0) : 
-    Math.max(2.2, (window.innerWidth / 900));
+    (isRedmiA2 ? 2.5 : 3.0) : 
+    Math.max(3.5, (window.innerWidth / 700));
 
   const material = new THREE.PointsMaterial({
     size: baseSize,
@@ -254,81 +277,87 @@ function computeTargets() {
     return new THREE.Vector3(p.x * scale, p.y * scale + heartYOffset, zOffset);
   });
 
-  // Smart text sizing - adaptive to screen size
+  // Smart text sizing - adaptive to screen size with larger, clearer text
   let nameW, nameH, phraseW, phraseH;
   let nameFontScale, phraseFontScale;
   
   if (isLandscape) {
-    // Landscape mode
-    nameW = Math.max(200, Math.floor(width * 0.25));
-    nameH = Math.max(60, Math.floor(height * 0.25));
-    phraseW = Math.max(300, Math.floor(width * 0.35));
-    phraseH = Math.max(50, Math.floor(height * 0.2));
+    // Landscape mode - larger text areas, ensure full text visibility
+    nameW = Math.max(250, Math.floor(width * 0.35));
+    nameH = Math.max(100, Math.floor(height * 0.35));
+    // Make phrase wider to fit "I LOVE YOU SHAHD" completely
+    phraseW = Math.max(500, Math.floor(width * 0.65));
+    phraseH = Math.max(80, Math.floor(height * 0.3));
     
     if (height <= 400) {
-      nameFontScale = 0.75;
-      phraseFontScale = 0.55;
+      nameFontScale = 0.85;
+      phraseFontScale = 0.65;
     } else if (height <= 600) {
-      nameFontScale = 0.85;
-      phraseFontScale = 0.6;
-    } else {
-      nameFontScale = 0.9;
-      phraseFontScale = 0.65;
-    }
-  } else {
-    // Portrait mode
-    nameW = Math.max(250, Math.floor(width * 0.75));
-    nameH = Math.max(70, Math.floor(height * 0.12));
-    phraseW = Math.max(350, Math.floor(width * 0.85));
-    phraseH = Math.max(60, Math.floor(height * 0.1));
-    
-    if (width <= 320) {
-      nameFontScale = 0.75;
-      phraseFontScale = 0.5;
-    } else if (width <= 375) {
-      nameFontScale = 0.8;
-      phraseFontScale = 0.55;
-    } else if (width <= 414) {
-      nameFontScale = 0.85;
-      phraseFontScale = 0.6;
-    } else if (width <= 768) {
-      nameFontScale = 0.9;
-      phraseFontScale = 0.65;
-    } else {
       nameFontScale = 0.95;
       phraseFontScale = 0.7;
+    } else {
+      nameFontScale = 1.05;
+      phraseFontScale = 0.75;
+    }
+  } else {
+    // Portrait mode - ensure text fits on screen
+    nameW = Math.max(300, Math.floor(width * 0.9));
+    nameH = Math.max(120, Math.floor(height * 0.18));
+    // Make phrase wider to prevent text cutoff - use full width minus margins
+    phraseW = Math.max(450, Math.floor(width * 0.95));
+    phraseH = Math.max(100, Math.floor(height * 0.15));
+    
+    if (width <= 320) {
+      nameFontScale = 0.85;
+      phraseFontScale = 0.6;
+    } else if (width <= 375) {
+      nameFontScale = 0.95;
+      phraseFontScale = 0.65;
+    } else if (width <= 414) {
+      nameFontScale = 1.0;
+      phraseFontScale = 0.7;
+    } else if (width <= 768) {
+      nameFontScale = 1.05;
+      phraseFontScale = 0.75;
+    } else {
+      nameFontScale = 1.1;
+      phraseFontScale = 0.8;
     }
   }
 
-  // Text sampling step - adaptive based on screen size
+  // Text sampling step - smaller step for denser, clearer text
   const textStep = isMobile ? 
-    (minDimension <= 360 ? 7 : minDimension <= 480 ? 6 : 5) : 
-    4;
+    (minDimension <= 360 ? 3 : minDimension <= 480 ? 2.5 : 2) : 
+    2;
 
   const nameRaw = sampleTextPoints('Shahd', nameW, nameH, textStep, nameFontScale);
   const nameTargets = nameRaw.map(r => {
     const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
-    // Position name above heart
+    // Position name above heart - ensure it's centered and visible
     let nameYPos;
     if (isLandscape) {
-      nameYPos = heartYOffset + heartScale * 0.6;
-    } else {
       nameYPos = heartYOffset + heartScale * 0.5;
+    } else {
+      nameYPos = heartYOffset + heartScale * 0.4;
     }
-    return new THREE.Vector3(r.x, r.y + nameYPos, zOffset);
+    // Ensure text doesn't go off screen horizontally
+    const xPos = Math.max(-width/2 + 20, Math.min(width/2 - 20, r.x));
+    return new THREE.Vector3(xPos, r.y + nameYPos, zOffset);
   });
 
   const phraseRaw = sampleTextPoints('I LOVE YOU SHAHD', phraseW, phraseH, textStep, phraseFontScale);
   const phraseTargets = phraseRaw.map(r => {
     const zOffset = isMobile ? (Math.random()-0.5)*20 : (Math.random()-0.5)*40;
-    // Position phrase below name
+    // Position phrase below name - ensure full visibility
     let phraseYPos;
     if (isLandscape) {
-      phraseYPos = heartYOffset + heartScale * 0.6 + nameH * 0.6;
-    } else {
       phraseYPos = heartYOffset + heartScale * 0.5 + nameH * 0.5;
+    } else {
+      phraseYPos = heartYOffset + heartScale * 0.4 + nameH * 0.4;
     }
-    return new THREE.Vector3(r.x, r.y + phraseYPos, zOffset);
+    // Ensure text doesn't go off screen horizontally - important for long text
+    const xPos = Math.max(-width/2 + 30, Math.min(width/2 - 30, r.x));
+    return new THREE.Vector3(xPos, r.y + phraseYPos, zOffset);
   });
 
   return { heartTargets, nameTargets, phraseTargets };
